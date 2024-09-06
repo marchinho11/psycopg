@@ -7,6 +7,7 @@ from psycopg.adapt import PyFormat
 
 pytest.importorskip("shapely")
 
+from shapely import set_srid, get_srid
 from shapely.geometry import Point, Polygon, MultiPolygon  # noqa: E402
 from psycopg.types.shapely import register_shapely  # noqa: E402
 
@@ -116,11 +117,11 @@ def test_write_read_shape(shapely_conn, fmt_in, fmt_out):
         """
         )
         cur.execute(
-            f"insert into sample_geoms(id, geom) VALUES(1, %{fmt_in})",
+            f"insert into sample_geoms(id, geom) VALUES(1, %{fmt_in.value})",
             (SAMPLE_POINT,),
         )
         cur.execute(
-            f"insert into sample_geoms(id, geom) VALUES(2, %{fmt_in})",
+            f"insert into sample_geoms(id, geom) VALUES(2, %{fmt_in.value})",
             (SAMPLE_POLYGON,),
         )
 
@@ -150,3 +151,28 @@ def test_match_geojson(shapely_conn, fmt_out):
         cur.execute("select ST_GeomFromGeoJSON(%s)", (MULTIPOLYGON_GEOJSON,))
         result = cur.fetchone()[0]
         assert isinstance(result, MultiPolygon)
+
+
+@pytest.mark.parametrize("fmt_in", PyFormat)
+@pytest.mark.parametrize("fmt_out", Format)
+def test_preserve_srid(shapely_conn, fmt_in, fmt_out):
+    """
+    Error:
+        psycopg.errors.InternalError_: LWGEOM_dwithin: Operation on mixed SRID geometries (Polygon, 4326) != (Point, 0)
+
+    Actually, no need for fix, custom adapter could be registered with include_srid=True kwarg
+    """
+    SAMPLE_POLYGON = Polygon([(0, 0), (1, 1), (1, 0)])
+    SAMPLE_POINT_WITH_SRID = set_srid(Point(1, 2), 4326)
+    assert get_srid(SAMPLE_POINT_WITH_SRID) == 4326
+
+    with shapely_conn.cursor(binary=fmt_out) as cur:
+        cur.execute("create table geom_with_srid(geom   geometry(polygon, 4326))")
+        cur.execute(
+            f"insert into geom_with_srid(geom) VALUES(%{fmt_in.value})",
+            (SAMPLE_POLYGON,),
+        )
+        cur.execute(
+            f"select ST_Dwithin(geom, %{fmt_in.value}, 10) from geom_with_srid",
+            (SAMPLE_POINT_WITH_SRID,)
+        )

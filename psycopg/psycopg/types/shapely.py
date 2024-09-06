@@ -43,12 +43,12 @@ class BaseGeometryBinaryDumper(Dumper):
     format = Format.BINARY
 
     def dump(self, obj: BaseGeometry) -> Buffer | None:
-        return dumps(obj)  # type: ignore
+        return dumps(obj, include_srid=True)  # type: ignore
 
 
 class BaseGeometryDumper(Dumper):
     def dump(self, obj: BaseGeometry) -> Buffer | None:
-        return dumps(obj, hex=True).encode()  # type: ignore
+        return dumps(obj, hex=True, include_srid=True).encode()  # type: ignore
 
 
 def register_shapely(info: TypeInfo, context: AdaptContext | None = None) -> None:
